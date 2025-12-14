@@ -84,7 +84,6 @@ def get_student_details(roll_no: int) -> dict:
         raise FileNotFoundError(f"Excel file '{file_name}' not found in the current directory")
     except Exception as e:
         raise Exception(f"Error reading student details: {str(e)}")
-    
 
 
 tools=[search_tool,get_stock_price,get_student_details]

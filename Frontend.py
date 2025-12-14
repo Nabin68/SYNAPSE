@@ -1,5 +1,5 @@
 import streamlit as st
-from Backend import app
+from Backend import app,retriever_all_threads,conn
 from langchain_core.messages import HumanMessage
 import uuid
 
@@ -7,6 +7,11 @@ import uuid
 def add_thread(thread_id,title):
     if thread_id not in st.session_state["chat_threads"]:
         st.session_state["chat_threads"][thread_id]=title
+        conn.execute(
+            "INSERT OR REPLACE INTO chat_titles VALUES (?, ?)",
+            (thread_id, title)
+        )
+        conn.commit()
         
 def generate_thread_id():
     thread_id=str(uuid.uuid4())  # Convert to string
@@ -35,7 +40,7 @@ if "thread_id" not in st.session_state:
     st.session_state["thread_id"]=generate_thread_id()
 
 if "chat_threads" not in st.session_state:
-    st.session_state["chat_threads"]={}
+    st.session_state["chat_threads"]=retriever_all_threads()
 
 #********************************Sidebar UI***********************************************
 st.sidebar.title("Omnis v2")

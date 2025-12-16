@@ -1,7 +1,17 @@
+#Tools.py
+
 from langchain_community.tools import DuckDuckGoSearchRun
 from langchain_core.tools import tool
 import pandas as pd
 import requests
+import os
+
+#For RAG
+from langchain_community.document_loaders import PDFPlumberLoader,Docx2txtLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_chroma import Chroma
+from langchain_huggingface import HuggingFaceEmbeddings
+import hashlib
 
 # Tools
 search_tool=DuckDuckGoSearchRun()
@@ -86,4 +96,72 @@ def get_student_details(roll_no: int) -> dict:
         raise Exception(f"Error reading student details: {str(e)}")
 
 
-tools=[search_tool,get_stock_price,get_student_details]
+def generate_file_id(file_path:str)->str:
+    """Generate a unique hash for a file based on its content"""
+    return hashlib.md5(file_path.encode()).hexdigest()
+
+@tool
+def RAG(file_path:str,query:str):
+    """
+    Retrieval Augmented Generation tool that searches through uploaded documents.
+    
+    This tool:
+    1. Embeds the document only once (reuses embeddings on subsequent queries)
+    2. Retrieves relevant chunks based on the user's query
+    3. Returns the most relevant text passages
+    
+    Args:
+        file_path (str): Path to the PDF or DOCX file
+        query (str): User's question or search query
+    
+    Returns:
+        str: Retrieved relevant text passages from the document
+    """
+    file_id=generate_file_id(file_path=file_path)
+    
+    embedding=HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2"
+    )
+    
+    vector_store=Chroma(
+        embedding_function=embedding,
+        persist_directory="RAG_Docs",
+        collection_name=f"file_{file_id}"
+    )
+    
+    existing_docs=vector_store.get()
+    
+    if not existing_docs["ids"]:
+        print("🔹 No embeddings found. Generating embeddings...")
+
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=200
+        )
+
+        if file_path.endswith(".pdf"):
+            docs = PDFPlumberLoader(file_path).load()
+        elif file_path.endswith(".docx"):
+            docs = Docx2txtLoader(file_path).load()
+        else:
+            return "Error: Only PDF and DOCX files are supported."
+
+        chunks = splitter.split_documents(docs)
+
+        vector_store.add_documents(chunks)
+        vector_store.persist()
+
+        print("✅ Embeddings generated and stored.")
+
+    else:
+        print("✅ Existing embeddings found. Skipping embedding step.")
+
+    # 🔎 retrieval
+    retriever = vector_store.as_retriever(search_kwargs={"k": 5})
+    retrieved_docs = retriever.invoke(query)
+
+    result = "\n\n---\n\n".join(doc.page_content for doc in retrieved_docs)
+    return result
+
+
+tools = [search_tool, get_stock_price, get_student_details, RAG]
